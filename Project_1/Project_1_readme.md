@@ -15,9 +15,7 @@
 Lets take a look at the first few rows to examine the data in its original form.
 
 ````sql
-SELECT 
-	*
-FROM club_member_info
+SELECT * FROM club_member_info
 LIMIT 10;
 ````
 
@@ -48,17 +46,24 @@ CREATE TABLE cleaned_club_member_info AS (
 - In this particular dataset, special characters only occur in the first name that can be removed using a simple regex.
 
 ````sql
-		LOWER(TRIM(REGEXP_REPLACE(SUBSTRING_INDEX(full_name, ' ', 1), '[^a-zA-Z0-9]', ''))) AS first_name,
+		LOWER(TRIM(REGEXP_REPLACE(SUBSTRING_INDEX(trim(full_name), ' ', 1), '[^a-zA-Z0-9]', ''))) AS first_name,
 ````
 
 - Some last names have multiple words ('de palma' or 'de la cruz'). 
-- Convert the string to an array to calculate its length and use a case statement to find entries with those particular types of surnames.
+- Calculate its length and use a case statement to find entries with those particular types of surnames.
 
 ````sql
 		 CASE
-        WHEN LENGTH(TRIM(REPLACE(full_name, ' ', ''))) - LENGTH(REPLACE(TRIM(full_name), ' ', '')) = 2 THEN CONCAT(SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -2), ' ', 1), ' ', SUBSTRING_INDEX(full_name, ' ', -1))
-        WHEN LENGTH(TRIM(REPLACE(full_name, ' ', ''))) - LENGTH(REPLACE(TRIM(full_name), ' ', '')) = 3 THEN CONCAT(SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -3), ' ', 1), ' ', SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -2), ' ', 1), ' ', SUBSTRING_INDEX(full_name, ' ', -1))
-        ELSE SUBSTRING_INDEX(full_name, ' ', -1)
+        -- 2 spaces → 3 words → last name has 2 words 
+        WHEN (LENGTH(TRIM(full_name)) - LENGTH(REPLACE(TRIM(full_name), ' ', ''))) = 2
+		THEN lower(SUBSTRING_INDEX(full_name, ' ', -2))
+
+		-- 3 spaces → 4 words → last name has 3 words 
+        WHEN (LENGTH(TRIM(full_name)) - LENGTH(REPLACE(TRIM(full_name), ' ', ''))) = 3
+        THEN lower(SUBSTRING_INDEX(full_name, ' ', -3))
+
+		-- Otherwise → single-word surname
+        ELSE lower(SUBSTRING_INDEX(full_name, ' ', -1))
     END AS last_name,
 ````
 
@@ -69,8 +74,8 @@ CREATE TABLE cleaned_club_member_info AS (
 
 ````sql
 		 CASE
-        WHEN age = '' THEN NULL
-        WHEN LENGTH(age) = 3 THEN CAST(LEFT(age, 2) AS UNSIGNED)
+        WHEN LENGTH(CAST(age AS CHAR)) = 3
+            THEN CAST(LEFT(CAST(age AS CHAR), 2) AS UNSIGNED)
         ELSE age
     END AS age,
 ````
@@ -126,10 +131,10 @@ LOWER(TRIM(email)) AS member_email,
 - A few members show membership_date year in the 1900's.  Change the year into the 2000's.
 
 ````sql
-		 CASE 
-        WHEN YEAR(STR_TO_DATE(membership_date, '%m/%d/%Y')) < 2000 
-            THEN DATE_FORMAT(STR_TO_DATE(membership_date, '%m/%d/%Y'), '20%y-%m-%d')
-        ELSE STR_TO_DATE(membership_date, '%m/%d/%Y')
+		CASE
+    WHEN YEAR(STR_TO_DATE(membership_date, '%m/%d/%Y')) < 2000
+        THEN DATE_ADD(STR_TO_DATE(membership_date, '%m/%d/%Y'),INTERVAL 100 YEAR)
+    ELSE STR_TO_DATE(membership_date, '%m/%d/%Y')
     END AS membership_date
 
 FROM club_member_info;
@@ -157,14 +162,21 @@ CREATE TABLE cleaned_club_member_info (
 SELECT
     -- Some of the names have extra spaces and special characters. Trim access whitespace, remove special characters 
     -- and convert to lowercase.
-    LOWER(TRIM(REGEXP_REPLACE(SUBSTRING_INDEX(full_name, ' ', 1), '[^a-zA-Z0-9]', ''))) AS first_name,
+    LOWER(TRIM(REGEXP_REPLACE(SUBSTRING_INDEX(trim(full_name), ' ', 1), '[^a-zA-Z0-9]', ''))) AS first_name,
 
-    -- Some last names have multiple words ('de palma' or 'de la cruz'). Convert the string to an array to calculate its length and use a 
+    -- Some last names have multiple words ('de palma' or 'de la cruz'). Calculate its length and use a 
     -- case statement to find entries with those particular types of surnames.
     CASE
-        WHEN LENGTH(TRIM(REPLACE(full_name, ' ', ''))) - LENGTH(REPLACE(TRIM(full_name), ' ', '')) = 2 THEN CONCAT(SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -2), ' ', 1), ' ', SUBSTRING_INDEX(full_name, ' ', -1))
-        WHEN LENGTH(TRIM(REPLACE(full_name, ' ', ''))) - LENGTH(REPLACE(TRIM(full_name), ' ', '')) = 3 THEN CONCAT(SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -3), ' ', 1), ' ', SUBSTRING_INDEX(SUBSTRING_INDEX(full_name, ' ', -2), ' ', 1), ' ', SUBSTRING_INDEX(full_name, ' ', -1))
-        ELSE SUBSTRING_INDEX(full_name, ' ', -1)
+        -- 2 spaces → 3 words → last name has 2 words 
+        WHEN (LENGTH(TRIM(full_name)) - LENGTH(REPLACE(TRIM(full_name), ' ', ''))) = 2
+		THEN lower(SUBSTRING_INDEX(full_name, ' ', -2))
+
+		-- 3 spaces → 4 words → last name has 3 words 
+        WHEN (LENGTH(TRIM(full_name)) - LENGTH(REPLACE(TRIM(full_name), ' ', ''))) = 3
+        THEN lower(SUBSTRING_INDEX(full_name, ' ', -3))
+
+		-- Otherwise → single-word surname
+        ELSE lower(SUBSTRING_INDEX(full_name, ' ', -1))
     END AS last_name,
 
     -- During data entry, some ages have an additional digit at the end. Remove the last digit when a 3 digit age value occurs.
@@ -173,7 +185,8 @@ SELECT
         WHEN age = '' THEN NULL
         -- First cast the integer to a string and test the character length.
         -- If condition is true, cast the integer to text, extract first 2 digits and cast back to numeric type.
-        WHEN LENGTH(age) = 3 THEN CAST(LEFT(age, 2) AS UNSIGNED)
+       WHEN LENGTH(CAST(age AS CHAR)) = 3
+            THEN CAST(LEFT(CAST(age AS CHAR), 2) AS UNSIGNED)
         ELSE age
     END AS age,
 
@@ -215,10 +228,10 @@ SELECT
     END AS occupation,
 
     -- A few members show membership_date year in the 1900's. Change the year into the 2000's.
-     CASE 
-        WHEN YEAR(STR_TO_DATE(membership_date, '%m/%d/%Y')) < 2000 
-            THEN DATE_FORMAT(STR_TO_DATE(membership_date, '%m/%d/%Y'), '20%y-%m-%d')
-        ELSE STR_TO_DATE(membership_date, '%m/%d/%Y')
+     CASE
+    WHEN YEAR(STR_TO_DATE(membership_date, '%m/%d/%Y')) < 2000
+        THEN DATE_ADD(STR_TO_DATE(membership_date, '%m/%d/%Y'),INTERVAL 100 YEAR)
+    ELSE STR_TO_DATE(membership_date, '%m/%d/%Y')
     END AS membership_date
 
 FROM club_member_info;
